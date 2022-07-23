@@ -5,7 +5,7 @@ This project is the result of my undergraduate dissertation. The localization in
 The main part of code will be published after the paper is received
     <video id="video" controls="" preload="none"
         poster="http://media.w3.org/2010/05/sintel/poster.png">
-         <source id="mp4" src="//player.bilibili.com/player.html?aid=983703014&bvid=BV1St4y157qH&cid=781449723&page=1" 
+         <source id="mp4" src="https://www.bilibili.com/video/BV1St4y157qH?share_source=copy_web&vd_source=12d45e19826de0471391d3db9d6c9491" 
              type="video/mp4">
           <p>Your user agent does not support the HTML5 Video element.</p>
     </video>
