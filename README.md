@@ -44,4 +44,7 @@ Our work is based on ORBSLAM3,Crowd-SLAM,Semantic-SLAM
      journal = {IOP Conference Series: Materials Science and Engineering},
      doi = {10.1088/1757-899X/428/1/012023}
      }
+     
+  ## 3.Prerequisites
+  Please refer to the compilation and operation of ORB-SLAM3:https://github.com/UZ-SLAMLab/ORB_SLAM3
 
