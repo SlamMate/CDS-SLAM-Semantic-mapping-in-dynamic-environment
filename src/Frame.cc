@@ -29,7 +29,13 @@
 #include <thread>
 #include <include/CameraModels/Pinhole.h>
 #include <include/CameraModels/KannalaBrandt8.h>
+cv::Mat imGrayPre;
+std::vector<cv::Point2f> prepoint, nextpoint;
+std::vector<cv::Point2f> F_prepoint, F_nextpoint;
+std::vector<cv::Point2f> F2_prepoint, F2_nextpoint;
 
+std::vector<uchar> state;
+std::vector<float> err;
 namespace ORB_SLAM3
 {
 
@@ -230,6 +236,24 @@ Frame::Frame(const cv::Mat &imGray, const cv::Mat &imDepth, const double &timeSt
 #endif
 
 
+        cv::Mat  imGrayT = imGray;
+        // Calculate the dynamic abnormal points and output the T matrix
+    if(imGrayPre.data)
+    {
+        std::chrono::steady_clock::time_point tm1 = std::chrono::steady_clock::now();
+        ProcessMovingObject(imGray);//传入的是灰度图
+        std::chrono::steady_clock::time_point tm2 = std::chrono::steady_clock::now();
+        movingDetectTime= std::chrono::duration_cast<std::chrono::duration<double> >(tm2 - tm1).count();
+        std::swap(imGrayPre, imGrayT);
+    }
+    else
+    {
+        //这个pre应该是前一帧的灰度图？
+        std::swap(imGrayPre, imGrayT);
+        flag_mov=0;
+    }
+    
+    
     N = mvKeys.size();
 
     if(mvKeys.empty())
@@ -427,6 +451,87 @@ void Frame::ExtractORB(int flag, const cv::Mat &im, const int x0, const int x1)
         monoLeft = (*mpORBextractorLeft)(im,cv::Mat(),mvKeys,mDescriptors,vLapping);
     else
         monoRight = (*mpORBextractorRight)(im,cv::Mat(),mvKeysRight,mDescriptorsRight,vLapping);
+}
+
+// Epipolar constraints and output the T matrix.
+void Frame::ProcessMovingObject(const cv::Mat &imgray)
+{
+    // Clear the previous data
+	F_prepoint.clear();
+	F_nextpoint.clear();
+	F2_prepoint.clear();
+	F2_nextpoint.clear();
+	T_M.clear();
+
+	// Detect dynamic target and ultimately optput the T matrix
+	
+    cv::goodFeaturesToTrack(imGrayPre, prepoint, 1000, 0.01, 8, cv::Mat(), 3, true, 0.04);
+    cv::cornerSubPix(imGrayPre, prepoint, cv::Size(10, 10), cv::Size(-1, -1), cv::TermCriteria(cv::TermCriteria::EPS | cv::TermCriteria::COUNT, 20, 0.03));
+	cv::calcOpticalFlowPyrLK(imGrayPre, imgray, prepoint, nextpoint, state, err, cv::Size(22, 22), 5, cv::TermCriteria(cv::TermCriteria::EPS | cv::TermCriteria::COUNT, 20, 0.01));
+
+	for (int i = 0; i < state.size(); i++)
+    {
+        if(state[i] != 0)
+        {
+            int dx[10] = { -1, 0, 1, -1, 0, 1, -1, 0, 1 };
+            int dy[10] = { -1, -1, -1, 0, 0, 0, 1, 1, 1 };
+            int x1 = prepoint[i].x, y1 = prepoint[i].y;
+            int x2 = nextpoint[i].x, y2 = nextpoint[i].y;
+            if ((x1 < limit_edge_corner || x1 >= imgray.cols - limit_edge_corner || x2 < limit_edge_corner || x2 >= imgray.cols - limit_edge_corner
+            || y1 < limit_edge_corner || y1 >= imgray.rows - limit_edge_corner || y2 < limit_edge_corner || y2 >= imgray.rows - limit_edge_corner))
+            {
+                state[i] = 0;
+                continue;
+            }
+            double sum_check = 0;
+            for (int j = 0; j < 9; j++)
+                sum_check += abs(imGrayPre.at<uchar>(y1 + dy[j], x1 + dx[j]) - imgray.at<uchar>(y2 + dy[j], x2 + dx[j]));
+            if (sum_check > limit_of_check) state[i] = 0;
+            if (state[i])
+            {
+                F_prepoint.push_back(prepoint[i]);
+                F_nextpoint.push_back(nextpoint[i]);
+            }
+        }
+    }
+    // F-Matrix
+    cv::Mat mask = cv::Mat(cv::Size(1, 300), CV_8UC1);
+    cv::Mat F = cv::findFundamentalMat(F_prepoint, F_nextpoint, mask, cv::FM_RANSAC, 0.1, 0.99);
+    for (int i = 0; i < mask.rows; i++)
+    {
+        if (mask.at<uchar>(i, 0) == 0);
+        else
+        {
+            // Circle(pre_frame, F_prepoint[i], 6, Scalar(255, 255, 0), 3);
+            double A = F.at<double>(0, 0)*F_prepoint[i].x + F.at<double>(0, 1)*F_prepoint[i].y + F.at<double>(0, 2);
+            double B = F.at<double>(1, 0)*F_prepoint[i].x + F.at<double>(1, 1)*F_prepoint[i].y + F.at<double>(1, 2);
+            double C = F.at<double>(2, 0)*F_prepoint[i].x + F.at<double>(2, 1)*F_prepoint[i].y + F.at<double>(2, 2);
+            double dd = fabs(A*F_nextpoint[i].x + B*F_nextpoint[i].y + C) / sqrt(A*A + B*B); //Epipolar constraints
+            if (dd <= 0.1)
+            {
+                F2_prepoint.push_back(F_prepoint[i]);
+                F2_nextpoint.push_back(F_nextpoint[i]);
+            }
+        }
+    }
+    F_prepoint = F2_prepoint;
+    F_nextpoint = F2_nextpoint;
+
+    for (int i = 0; i < prepoint.size(); i++)
+    {
+        if (state[i] != 0)
+        {
+            double A = F.at<double>(0, 0)*prepoint[i].x + F.at<double>(0, 1)*prepoint[i].y + F.at<double>(0, 2);
+            double B = F.at<double>(1, 0)*prepoint[i].x + F.at<double>(1, 1)*prepoint[i].y + F.at<double>(1, 2);
+            double C = F.at<double>(2, 0)*prepoint[i].x + F.at<double>(2, 1)*prepoint[i].y + F.at<double>(2, 2);
+            double dd = fabs(A*nextpoint[i].x + B*nextpoint[i].y + C) / sqrt(A*A + B*B);
+
+            // Judge outliers
+            if (dd <= limit_dis_epi) continue;
+            T_M.push_back(nextpoint[i]);
+        }
+    }
+
 }
 
 bool Frame::isSet() const {
@@ -751,10 +856,26 @@ void Frame::ComputeBoW()
 
 
 // 以下为修改点
+/**
 void Frame::SetBoxes(const std::vector<cv::Rect> newBoxes)
 {
 	detectedBoxes = newBoxes;
 }
+**/
+void Frame::SetBoxes_dynamic(const std::vector<cv::Rect> newBoxes)
+{
+	detectedBoxes_dynamic = newBoxes;
+}
+/**
+void Frame::SetBoxes_half(const std::vector<cv::Rect> newBoxes)
+{
+	detectedBoxes_half = newBoxes;
+}
+**/
+/** void Frame::SetBoxes_stay(const std::vector<cv::Rect> newBoxes)
+{
+	detectedBoxes_stay = newBoxes;
+}**/
 //双目的改动
 void Frame::RemoveOutliers(const cv::Mat &imLeft, const cv::Mat &imRight, const double &timeStamp, ORBextractor* extractorLeft, ORBextractor* extractorRight, ORBVocabulary* voc, cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth, GeometricCamera* pCamera, Frame* pPrevF, const IMU::Calib &ImuCalib){
 
@@ -763,24 +884,58 @@ void Frame::RemoveOutliers(const cv::Mat &imLeft, const cv::Mat &imRight, const 
 
 	int offset = 5;
 	
-	std::vector<cv::Rect> boxes;
-	boxes = detectedBoxes;
+//	std::vector<cv::Rect> boxes;
+	std::vector<cv::Rect> boxes_dynamic;
+//	std::vector<cv::Rect> boxes_half;
+//	std::vector<cv::Rect> boxes_stay;
+	
+//	boxes = detectedBoxes;
+	boxes_dynamic = detectedBoxes_dynamic;
+//	boxes_half = detectedBoxes_half;
+//	boxes_stay = detectedBoxes_stay;
+
 	cv::Rect box1;
 	
-	if(boxes.size() > 0){
+	if(boxes_dynamic.size() > 0){
 
 		for (size_t i(0); i < mvKeys.size(); ++i){
 	
 			bool bool_key = false;
-			int n_people = 0;
-			while(n_people < boxes.size()){
+			
+//			int n_people = 0;
+			int n_dynamic = 0;
+//			int n_half = 0;
+//			int n_stay = 0;
+			
+			// 检测关键点是否在人体框内,把这个归为动态物体，减少开销，但是未来如果要动作识别的话，人体和动物是要分开处理的
+			/** while(n_people < boxes.size()){
 				box1 = boxes[n_people];			
 				if(mvKeys[i].pt.y > box1.y - offset && mvKeys[i].pt.y < box1.y + box1.height + offset && mvKeys[i].pt.x > box1.x - offset && mvKeys[i].pt.x < box1.x + box1.width + offset){
 					bool_key = true;
 				}
 				n_people++;
 
-			}	
+			}**/
+			// 检测关键点是否在动态物体的目标框内
+			while(n_dynamic < boxes_dynamic.size()){
+				box1 = boxes_dynamic[n_dynamic];			
+				if(mvKeys[i].pt.y > box1.y - offset && mvKeys[i].pt.y < box1.y + box1.height + offset && mvKeys[i].pt.x > box1.x - offset && mvKeys[i].pt.x < box1.x + box1.width + offset){
+					bool_key = true;
+				}
+				n_dynamic++;
+
+			}
+			/**if(boxes_stay.size() > 0){
+			//检测关键点是否在静态物体的目标框内,如果关键点在动态物体或者人体框内，则不剔除该静态物体
+			while(n_stay < boxes_stay.size()){
+				box1 = boxes_stay[n_stay];			
+				if(mvKeys[i].pt.y > box1.y + offset && mvKeys[i].pt.y < box1.y + box1.height - offset && mvKeys[i].pt.x > box1.x + offset && mvKeys[i].pt.x < box1.x + box1.width -offset && bool_key){
+					bool_key = false;
+				}
+				n_stay++;
+
+			}
+			}**/	
 			if(bool_key == false){      			
        		   	_mvKeys.push_back(mvKeys[i]);
        		   	_mDescriptors.push_back(mDescriptors.row(i));
@@ -890,35 +1045,61 @@ void Frame::RemoveOutliers(const cv::Mat &imLeft, const cv::Mat &imRight, const 
 //RGB-D的改动，与单目区别就是有没有depth输入，与双目区别就是有没有left和right
 void Frame::RemoveOutliers(const cv::Mat &imGray, const cv::Mat &imDepth, const double &timeStamp, ORBextractor* extractor,ORBVocabulary* voc, cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth, GeometricCamera* pCamera,Frame* pPrevF, const IMU::Calib &ImuCalib)
 {
-	//std::cout << "people frame: " << detectedBoxes.size() << std::endl;
+	// std::cout << "people frame: " << detectedBoxes.size() << std::endl;
 	
 	std::vector<cv::KeyPoint> _mvKeys;
 	cv::Mat _mDescriptors;	
 
-	int offset = 0;
+	// 人碰到边缘
+	int offset = 5;
 	
-	std::vector<cv::Rect> boxes;
-	boxes = detectedBoxes;
+//	std::vector<cv::Rect> boxes;
+	std::vector<cv::Rect> boxes_dynamic;
+//	std::vector<cv::Rect> boxes_half;
+//	std::vector<cv::Rect> boxes_stay;
+	
+	boxes_dynamic = detectedBoxes_dynamic;
 	cv::Rect box1;
 	
-	if(boxes.size() > 0){
+	if(boxes_dynamic.size() > 0){
 
+		//对每一关键点进行遍历
 		for (size_t i(0); i < mvKeys.size(); ++i){
 	
 			bool bool_key = false;
-			int n_people = 0;
-			while(n_people < boxes.size()){
-				box1 = boxes[n_people];			
+			bool bool_key_T = false;
+			
+			int n_dynamic = 0;
+			
+			// 检测关键点是否在动态物体的目标框内，对动态物体目标框进行遍历
+			while(n_dynamic < boxes_dynamic.size()){
+				box1 = boxes_dynamic[n_dynamic];			
 				if(mvKeys[i].pt.y > box1.y - offset && mvKeys[i].pt.y < box1.y + box1.height + offset && mvKeys[i].pt.x > box1.x - offset && mvKeys[i].pt.x < box1.x + box1.width + offset){
 					bool_key = true;
 				}
-				n_people++;
+				n_dynamic++;
 
-			}	
-			if(bool_key == false){      			
+			}
+
+			
+			/**
+			if(boxes_stay.size() > 0){
+			//检测关键点是否在静态物体的目标框内,如果关键点在动态物体或者人体框内，则不剔除该静态物体
+			while(n_stay < boxes_stay.size()){
+				box1 = boxes_stay[n_stay];			
+				if(mvKeys[i].pt.y > box1.y + offset && mvKeys[i].pt.y < box1.y + box1.height - offset && mvKeys[i].pt.x > box1.x + offset && mvKeys[i].pt.x < box1.x + box1.width - offset && bool_key){
+					bool_key = false;
+				}
+				n_stay++;
+
+			}
+			}**/
+			//否则为false,将关键点放在图中
+			if(!bool_key){      			
        		   	_mvKeys.push_back(mvKeys[i]);
        		   	_mDescriptors.push_back(mDescriptors.row(i));
        		}
+       			// std::cout << "people : " << n_people << std::endl;
 		}
 	
 		mvKeys = _mvKeys;
@@ -926,6 +1107,7 @@ void Frame::RemoveOutliers(const cv::Mat &imGray, const cv::Mat &imDepth, const 
 	}
 	
 	N = mvKeys.size();
+// std::cout << "people key: " << N << std::endl;
 /*
 	UndistortKeyPoints();
 
@@ -1017,16 +1199,28 @@ void Frame::RemoveOutliers(const cv::Mat &imGray, const double &timeStamp, ORBex
 
 	int offset = 5;
 	
-	std::vector<cv::Rect> boxes;
-	boxes = detectedBoxes;
+//	std::vector<cv::Rect> boxes;
+	std::vector<cv::Rect> boxes_dynamic;
+//	std::vector<cv::Rect> boxes_half;
+//	std::vector<cv::Rect> boxes_stay;
+	
+//	boxes = detectedBoxes;
+	boxes_dynamic = detectedBoxes_dynamic;
+//	boxes_half = detectedBoxes_half;
+//	boxes_stay = detectedBoxes_stay;
+	
 	cv::Rect box1;
 	
-	if(boxes.size() > 0){
+	if(boxes_dynamic.size() > 0){
 
 		for (size_t i(0); i < mvKeys.size(); ++i){
 	
 			bool bool_key = false;
-			int n_people = 0;
+//			int n_people = 0;
+			int n_dynamic = 0;
+//			int n_half = 0;
+//			int n_stay = 0;
+			/**
 			while(n_people < boxes.size()){
 				box1 = boxes[n_people];			
 				if(mvKeys[i].pt.y > box1.y - offset && mvKeys[i].pt.y < box1.y + box1.height + offset && mvKeys[i].pt.x > box1.x - offset && mvKeys[i].pt.x < box1.x + box1.width + offset){
@@ -1034,7 +1228,27 @@ void Frame::RemoveOutliers(const cv::Mat &imGray, const double &timeStamp, ORBex
 				}
 				n_people++;
 
-			}	
+			}**/
+			// 检测关键点是否在动态物体的目标框内
+			while(n_dynamic < boxes_dynamic.size()){
+				box1 = boxes_dynamic[n_dynamic];			
+				if(mvKeys[i].pt.y > box1.y - offset && mvKeys[i].pt.y < box1.y + box1.height + offset && mvKeys[i].pt.x > box1.x - offset && mvKeys[i].pt.x < box1.x + box1.width + offset){
+					bool_key = true;
+				}
+				n_dynamic++;
+
+			}
+			/**if(boxes_stay.size() > 0){
+			//检测关键点是否在静态物体的目标框内,如果关键点在动态物体或者人体框内，则不剔除该静态物体
+			while(n_stay < boxes_stay.size()){
+				box1 = boxes_stay[n_stay];			
+				if(mvKeys[i].pt.y > box1.y + offset && mvKeys[i].pt.y < box1.y + box1.height - offset && mvKeys[i].pt.x > box1.x + offset && mvKeys[i].pt.x < box1.x + box1.width -offset && bool_key){
+					bool_key = false;
+				}
+				n_stay++;
+
+			}
+			}**/	
 			if(bool_key == false){      			
        		   	_mvKeys.push_back(mvKeys[i]);
        		   	_mDescriptors.push_back(mDescriptors.row(i));
@@ -1535,23 +1749,34 @@ void Frame::RemoveOutliers(const cv::Mat &imLeft, const cv::Mat &imRight, const 
 	cv::Mat _mDescriptorsRight;	
 
 	int offset = 5;
-	//初始化目标检测框集合
-	std::vector<cv::Rect> boxes;
-	//全局目标框集合？
-	boxes = detectedBoxes;
+	
+//	std::vector<cv::Rect> boxes;
+	std::vector<cv::Rect> boxes_dynamic;
+//	std::vector<cv::Rect> boxes_half;
+//	std::vector<cv::Rect> boxes_stay;
+	
+//	boxes = detectedBoxes;
+	boxes_dynamic = detectedBoxes_dynamic;
+//	boxes_half = detectedBoxes_half;
+//	boxes_stay = detectedBoxes_stay;
+	
 	//正方形的目标框对象
 	cv::Rect box1;
 	
 	cv::Rect boxRight1;
 	
 	//如果集合内有目标框的话
-	if(boxes.size() > 0){
+	if(boxes_dynamic.size() > 0){
 
 		//mvkey是特征点数量
 		for (size_t i(0); i < mvKeys.size(); ++i){
 	
 			bool bool_key = false;
-			int n_people = 0;
+//			int n_people = 0;
+			int n_dynamic = 0;
+//			int n_half = 0;
+//			int n_stay = 0;
+			/**
 			while(n_people < boxes.size()){
 				box1 = boxes[n_people];			
 				if(mvKeys[i].pt.y > box1.y - offset && mvKeys[i].pt.y < box1.y + box1.height + offset && mvKeys[i].pt.x > box1.x - offset && mvKeys[i].pt.x < box1.x + box1.width + offset){
@@ -1559,7 +1784,27 @@ void Frame::RemoveOutliers(const cv::Mat &imLeft, const cv::Mat &imRight, const 
 				}
 				n_people++;
 
+			}**/
+			// 检测关键点是否在动态物体的目标框内
+			while(n_dynamic < boxes_dynamic.size()){
+				box1 = boxes_dynamic[n_dynamic];			
+				if(mvKeys[i].pt.y > box1.y - offset && mvKeys[i].pt.y < box1.y + box1.height + offset && mvKeys[i].pt.x > box1.x - offset && mvKeys[i].pt.x < box1.x + box1.width + offset){
+					bool_key = true;
+				}
+				n_dynamic++;
+
 			}
+			/**if(boxes_stay.size() > 0){
+			//检测关键点是否在静态物体的目标框内,如果关键点在动态物体或者人体框内，则不剔除该静态物体
+			while(n_stay < boxes_stay.size()){
+				box1 = boxes_stay[n_stay];			
+				if(mvKeys[i].pt.y > box1.y + offset && mvKeys[i].pt.y < box1.y + box1.height - offset && mvKeys[i].pt.x > box1.x + offset && mvKeys[i].pt.x < box1.x + box1.width - offset && bool_key){
+					bool_key = false;
+				}
+				n_stay++;
+
+			}
+			}**/
 			if(bool_key == false){      			
        		   	_mvKeys.push_back(mvKeys[i]);
        		   	_mDescriptors.push_back(mDescriptors.row(i));
@@ -1568,9 +1813,12 @@ void Frame::RemoveOutliers(const cv::Mat &imLeft, const cv::Mat &imRight, const 
 		
 		for (size_t i(0); i < mvKeysRight.size(); ++i){
 	
-			bool bool_keyRight = false;
-			int n_peopleRight = 0;
-			while(n_peopleRight < boxes.size()){
+			bool bool_key_right = false;
+//			int n_people = 0;
+			int n_dynamic_right = 0;
+//			int n_half = 0;
+//			int n_stay_right = 0;
+/**			while(n_peopleRight < boxes.size()){
 				boxRight1 = boxes[n_peopleRight];			
 				if(mvKeysRight[i].pt.y > boxRight1.y - offset && mvKeysRight[i].pt.y < boxRight1.y + boxRight1.height + offset && mvKeysRight[i].pt.x > boxRight1.x - offset && mvKeysRight[i].pt.x < boxRight1.x + boxRight1.width + offset){
 					bool_keyRight = true;
@@ -1578,7 +1826,29 @@ void Frame::RemoveOutliers(const cv::Mat &imLeft, const cv::Mat &imRight, const 
 				n_peopleRight++;
 
 			}
-			if(bool_keyRight == false){      			
+			**/
+			// 检测关键点是否在动态物体的目标框内
+			while(n_dynamic_right < boxes_dynamic.size()){
+				boxRight1 = boxes_dynamic[n_dynamic_right];			
+				if(mvKeysRight[i].pt.y > boxRight1.y - offset && mvKeysRight[i].pt.y < boxRight1.y + boxRight1.height + offset && mvKeysRight[i].pt.x > boxRight1.x - offset && mvKeysRight[i].pt.x < boxRight1.x + boxRight1.width + offset){
+					bool_key_right = true;
+				}
+				n_dynamic_right++;
+
+			}
+			/**
+			if(boxes_stay.size() > 0){
+			//检测关键点是否在静态物体的目标框内,如果关键点在动态物体或者人体框内，则不剔除该静态物体
+			while(n_stay_right < boxes_stay.size()){
+				boxRight1 = boxes_stay[n_stay_right];			
+				if(mvKeysRight[i].pt.y > boxRight1.y + offset && mvKeysRight[i].pt.y < boxRight1.y + boxRight1.height -offset && mvKeysRight[i].pt.x > boxRight1.x + offset && mvKeysRight[i].pt.x < boxRight1.x + boxRight1.width-offset && bool_key_right){
+					bool_key_right = false;
+				}
+				n_stay_right++;
+
+			}
+			}**/
+			if(bool_key_right == false){      			
        		   	_mvKeysRight.push_back(mvKeysRight[i]);
        		   	_mDescriptorsRight.push_back(mDescriptorsRight.row(i));
        		}

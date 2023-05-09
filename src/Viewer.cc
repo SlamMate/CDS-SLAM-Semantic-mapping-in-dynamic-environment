@@ -21,6 +21,102 @@
 #include <pangolin/pangolin.h>
 
 #include <mutex>
+std::vector<cv::Rect> boxes1;
+int label1[80] = {0};
+char* class_names1[]= {
+        "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat", "traffic light",
+        "fire hydrant", "stop sign", "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep", "cow",
+        "elephant", "bear", "zebra", "giraffe", "backpack", "umbrella", "handbag", "tie", "suitcase", "frisbee",
+        "skis", "snowboard", "sports ball", "kite", "baseball bat", "baseball glove", "skateboard", "surfboard",
+        "tennis racket", "bottle", "wine glass", "cup", "fork", "knife", "spoon", "bowl", "banana", "apple",
+        "sandwich", "orange", "broccoli", "carrot", "hot dog", "pizza", "donut", "cake", "chair", "couch",
+        "potted plant", "bed", "dining table", "toilet", "tv", "laptop", "mouse", "remote", "keyboard", "cell phone",
+        "microwave", "oven", "toaster", "sink", "refrigerator", "book", "clock", "vase", "scissors", "teddy bear",
+        "hair drier", "toothbrush"
+    };
+const float color_list1[80][3] =
+{
+    {0.999, 0.447, 0.741},
+    {0.850, 0.325, 0.098},
+    {0.929, 0.694, 0.125},
+    {0.494, 0.184, 0.556},
+    {0.466, 0.674, 0.188},
+    {0.301, 0.745, 0.933},
+    {0.635, 0.078, 0.184},
+    {0.300, 0.300, 0.300},
+    {0.600, 0.600, 0.600},
+    {1.000, 0.000, 0.000},
+    {1.000, 0.500, 0.000},
+    {0.749, 0.749, 0.000},
+    {0.000, 1.000, 0.000},
+    {0.000, 0.000, 1.000},
+    {0.667, 0.000, 1.000},
+    {0.333, 0.333, 0.000},
+    {0.333, 0.667, 0.000},
+    {0.333, 1.000, 0.000},
+    {0.667, 0.333, 0.000},
+    {0.667, 0.667, 0.000},
+    {0.667, 1.000, 0.000},
+    {1.000, 0.333, 0.000},
+    {1.000, 0.667, 0.000},
+    {1.000, 1.000, 0.000},
+    {0.000, 0.333, 0.500},
+    {0.000, 0.667, 0.500},
+    {0.000, 1.000, 0.500},
+    {0.333, 0.000, 0.500},
+    {0.333, 0.333, 0.500},
+    {0.333, 0.667, 0.500},
+    {0.333, 1.000, 0.500},
+    {0.667, 0.000, 0.500},
+    {0.667, 0.333, 0.500},
+    {0.667, 0.667, 0.500},
+    {0.667, 1.000, 0.500},
+    {1.000, 0.000, 0.500},
+    {1.000, 0.333, 0.500},
+    {1.000, 0.667, 0.500},
+    {1.000, 1.000, 0.500},
+    {0.000, 0.333, 1.000},
+    {0.000, 0.667, 1.000},
+    {0.000, 1.000, 1.000},
+    {0.333, 0.000, 1.000},
+    {0.333, 0.333, 1.000},
+    {0.333, 0.667, 1.000},
+    {0.333, 1.000, 1.000},
+    {0.667, 0.000, 1.000},
+    {0.667, 0.333, 1.000},
+    {0.667, 0.667, 1.000},
+    {0.667, 1.000, 1.000},
+    {1.000, 0.000, 1.000},
+    {1.000, 0.333, 1.000},
+    {1.000, 0.667, 1.000},
+    {0.333, 0.000, 0.000},
+    {0.500, 0.000, 0.000},
+    {0.667, 0.000, 0.000},
+    {0.833, 0.000, 0.000},
+    {1.000, 0.000, 0.000},
+    {0.000, 0.167, 0.000},
+    {0.000, 0.333, 0.000},
+    {0.000, 0.500, 0.000},
+    {0.000, 0.667, 0.000},
+    {0.000, 0.833, 0.000},
+    {0.000, 1.000, 0.000},
+    {0.000, 0.000, 0.167},
+    {0.000, 0.000, 0.333},
+    {0.000, 0.000, 0.500},
+    {0.000, 0.000, 0.667},
+    {0.000, 0.000, 0.833},
+    {0.000, 0.000, 1.000},
+    {0.000, 0.000, 0.000},
+    {0.143, 0.143, 0.143},
+    {0.286, 0.286, 0.286},
+    {0.429, 0.429, 0.429},
+    {0.571, 0.571, 0.571},
+    {0.714, 0.714, 0.714},
+    {0.857, 0.857, 0.857},
+    {0.000, 0.447, 0.741},
+    {0.314, 0.717, 0.741},
+    {0.50, 0.5, 0}
+};
 
 namespace ORB_SLAM3
 {
@@ -53,6 +149,25 @@ Viewer::Viewer(System* pSystem, FrameDrawer *pFrameDrawer, MapDrawer *pMapDrawer
     }
 
     mbStopTrack = false;
+}
+void Viewer::SetObjects(std::vector<cv::Rect> pboxes, int plabel[80]){
+
+	//把上一帧的数据清空
+	// boxes.clear();
+	/**for(int i=0;i<80;i++){
+	label[80]=0;
+	}
+	**/
+	
+       // cout << "pboxes size =" << pboxes.size() << endl;
+       // cout << "pboxes size =" << plabel[0] << endl;
+	
+	boxes1 = pboxes;
+	
+	for(int i=0;i<80;i++){
+	label1[i] = plabel[i];
+	}
+	
 }
 
 void Viewer::newParameterLoader(Settings *settings) {
@@ -335,8 +450,26 @@ void Viewer::Run()
             cv::resize(toShow, toShow, cv::Size(width, height));
         }
 
+        //对显示图像页面加上目标框和类别名
+        cv::Rect box1;
+        
+        if(boxes1.size()>0){
+        	int n_dynamic = 0;
+        	while(n_dynamic < boxes1.size()){
+				box1 = boxes1[n_dynamic];			
+				cv::rectangle(toShow, box1, cv::Scalar(255*color_list1[label1[n_dynamic]][0], 255*color_list1[label1[n_dynamic]][1], 255*color_list1[label1[n_dynamic]][2]), 1);
+				char text[256];
+				sprintf(text, "%s", class_names1[label1[n_dynamic]]);
+				cv::putText(toShow, text, cv::Point(box1.x, box1.y-5),
+                    cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(255*color_list1[label1[n_dynamic]][0], 255*color_list1[label1[n_dynamic]][1], 255*color_list1[label1[n_dynamic]][2]), 3);
+				n_dynamic++;
+
+		}
+        
+        }
         cv::imshow("ORB-SLAM3: Current Frame",toShow);
         cv::waitKey(mT);
+        // cout << mT << endl;
 
         if(menuReset)
         {

@@ -42,10 +42,10 @@ namespace ORB_SLAM3
 {
 
 
-Tracking::Tracking(System *pSys, ORBVocabulary* pVoc, FrameDrawer *pFrameDrawer, MapDrawer *pMapDrawer, Atlas *pAtlas, KeyFrameDatabase* pKFDB, const string &strSettingPath, const int sensor, Settings* settings, const string &_nameSeq):
+Tracking::Tracking(System *pSys, ORBVocabulary* pVoc, FrameDrawer *pFrameDrawer, MapDrawer *pMapDrawer, Atlas *pAtlas, shared_ptr<PointCloudMapping> pPointCloud, KeyFrameDatabase* pKFDB, const string &strSettingPath, const int sensor, Settings* settings, const string &_nameSeq):
     mState(NO_IMAGES_YET), mSensor(sensor), mTrackedFr(0), mbStep(false),
-    mbOnlyTracking(false), mbMapUpdated(false), mbVO(false), mpORBVocabulary(pVoc), mpKeyFrameDB(pKFDB),
-    mbReadyToInitializate(false), mpSystem(pSys), mpViewer(NULL), bStepByStep(false),
+    mbOnlyTracking(false), mbMapUpdated(false), mbVO(false), mpORBVocabulary(pVoc), mpPointCloudMapping( pPointCloud ), mpKeyFrameDB(pKFDB),
+mbReadyToInitializate(false), mpSystem(pSys), mpViewer(NULL), bStepByStep(false),
     mpFrameDrawer(pFrameDrawer), mpMapDrawer(pMapDrawer), mpAtlas(pAtlas), mnLastRelocFrameId(0), time_recently_lost(5.0),
     mnInitialFrameId(0), mbCreatedMap(false), mnFirstFrameId(0), mpCamera2(nullptr), mpLastKeyFrame(static_cast<KeyFrame*>(NULL))
 {
@@ -1460,13 +1460,9 @@ Sophus::SE3f Tracking::GrabImageStereo(const cv::Mat &imRectLeft, const cv::Mat 
     cout << "GrabImageStereo" << endl;
 
         //------------------------------------------------------------------------------------------------
-	// 一开始初始化没进行五个值都是0,容易导致内存泄漏的情况，所以加个判断条件，如果不是全是0的话，才进行参数的更新
-	// cout <<nFeatures<< endl;
 
 	mpORBextractorLeft = new ORBextractor(nFeatures,fScaleFactor,nLevels,fIniThFAST,fMinThFAST); 
 	mpORBextractorRight = new ORBextractor(nFeatures,fScaleFactor,nLevels,fIniThFAST,fMinThFAST);
-	
-
 
     //------------------------------------------------------------------------------------------------
     
@@ -1535,8 +1531,10 @@ Sophus::SE3f Tracking::GrabImageStereo(const cv::Mat &imRectLeft, const cv::Mat 
     double ttrack= std::chrono::duration_cast<std::chrono::duration<double> >(t4 - t3).count();
     cout << "time waiting for detection: " << ttrack*1000 << endl;
 
-	// send detected boxes to Frame
-	mCurrentFrame.SetBoxes(mpDetector->people_boxes);
+//	mCurrentFrame.SetBoxes(mpDetector->people_boxes);
+//	mCurrentFrame.SetBoxes_half(mpDetector->half_boxes);
+	mCurrentFrame.SetBoxes_dynamic(mpDetector->dynamic_boxes);
+//	mCurrentFrame.SetBoxes_stay(mpDetector->stay_boxes);
 	// remove dynamic features	
  if (mSensor == System::STEREO && !mpCamera2)
         mCurrentFrame.RemoveOutliers(mImGray,imGrayRight,timestamp,mpORBextractorLeft,mpORBextractorRight,mpORBVocabulary,mK,mDistCoef,mbf,mThDepth,mpCamera);
@@ -1584,6 +1582,8 @@ Sophus::SE3f Tracking::GrabImageStereo(const cv::Mat &imRectLeft, const cv::Mat 
 
 Sophus::SE3f Tracking::GrabImageRGBD(const cv::Mat &imRGB,const cv::Mat &imD, const double &timestamp, string filename)
 {
+    // 保持和Detector相同的输入图片和目标检测框
+    mpPointCloudMapping->SetImage(mpDetector->mImg);
     // FEATURE NUMBER UPDATE
     //------------------------------------------------------------------------------------------------
 	
@@ -1591,8 +1591,12 @@ Sophus::SE3f Tracking::GrabImageRGBD(const cv::Mat &imRGB,const cv::Mat &imD, co
 
     //------------------------------------------------------------------------------------------------
 
+    // mImGray = imRGB;
+    // cv::Mat imDepth = imD;
+    
+    mImRGB = imRGB;
     mImGray = imRGB;
-    cv::Mat imDepth = imD;
+    imDepth = imD;
 
     if(mImGray.channels()==3)
     {
@@ -1628,17 +1632,27 @@ Sophus::SE3f Tracking::GrabImageRGBD(const cv::Mat &imRGB,const cv::Mat &imD, co
     //cout << "time waiting for detection: " << ttrack*1000 << endl;
 
 	// send detected boxes to Frame
-	mCurrentFrame.SetBoxes(mpDetector->people_boxes);
+//	mCurrentFrame.SetBoxes(mpDetector->people_boxes);
+//	mCurrentFrame.SetBoxes_half(mpDetector->half_boxes);
+	mCurrentFrame.SetBoxes_dynamic(mpDetector->dynamic_boxes);
+//	mpViewer->SetBoxes_dynamic(mpDetector->dynamic_boxes);
+//	mCurrentFrame.SetBoxes_stay(mpDetector->stay_boxes);
 	// remove dynamic features
 	 if (mSensor == System::RGBD)
         mCurrentFrame.RemoveOutliers(mImGray,imDepth,timestamp,mpORBextractorLeft,mpORBVocabulary,mK,mDistCoef,mbf,mThDepth,mpCamera);
     else if(mSensor == System::IMU_RGBD)
 mCurrentFrame.RemoveOutliers(mImGray,imDepth,timestamp,mpORBextractorLeft,mpORBVocabulary,mK,mDistCoef,mbf,mThDepth,mpCamera,&mLastFrame,*mpImuCalib);	
-	
 //-------------------------------------------------------
+    // 保持和Detector相同的输入图片和目标检测框
+    /**    while(!isNewCloudMappingImgArrived()) 
+    {
+        usleep(1);
+    }
+    mpPointCloudMapping->SetObjects(mpDetector->boxes1,mpDetector->label);
+**/
 
-
-
+mpPointCloudMapping->SetObjects(mpDetector->boxes1,mpDetector->label);
+mpViewer->SetObjects(mpDetector->boxes1,mpDetector->label);
 
     mCurrentFrame.mNameFile = filename;
     mCurrentFrame.mnDataset = mnNumDataset;
@@ -1686,13 +1700,36 @@ int Tracking::FeatureNumberUpdate(const double area, const int factor)
 	}
 }
 
+void Tracking::GetImgForPointCloudMapping(const cv::Mat& img)
+{
+    unique_lock<mutex> lock(mpPointCloudMapping->mMutexGetNewImg);
+    mpPointCloudMapping->mbNewImgFlag=true;
+    img.copyTo(mpPointCloudMapping->origin_image);
+}
+bool Tracking::isNewCloudMappingImgArrived()
+{
+        // if(mpDetector==NULL)
+        // cout<< mpDetector << endl;
+        // cout<< "dddd" << endl;
+    std::unique_lock <std::mutex> lock(mpPointCloudMapping->mMutexNewImgCloud);
+        // cout<< "eee" << endl;
+ if(mbNewCloudImgFlag)
+    {
+        mbNewCloudImgFlag=false;
+        return true;
+    }
+    else 
+    {
+	    return false;
+    }
+}
+
 void Tracking::GetImgForDetector(const cv::Mat& img)
 {
     unique_lock<mutex> lock(mpDetector->mMutexGetNewImg);
     mpDetector->mbNewImgFlag=true;
     img.copyTo(mpDetector->mImg);
 }
-
 bool Tracking::isNewDetectedImgArrived()
 {
         // if(mpDetector==NULL)
@@ -1768,7 +1805,10 @@ Sophus::SE3f Tracking::GrabImageMonocular(const cv::Mat &im, const double &times
     //cout << "time waiting for detection: " << ttrack*1000 << endl;
 
 	// send detected boxes to Frame
-	mCurrentFrame.SetBoxes(mpDetector->people_boxes);
+//	mCurrentFrame.SetBoxes(mpDetector->people_boxes);
+//	mCurrentFrame.SetBoxes_half(mpDetector->half_boxes);
+	mCurrentFrame.SetBoxes_dynamic(mpDetector->dynamic_boxes);
+///	mCurrentFrame.SetBoxes_stay(mpDetector->stay_boxes);
 	// remove dynamic features
 	 if (mSensor == System::MONOCULAR)
     {
@@ -3539,6 +3579,9 @@ void Tracking::CreateNewKeyFrame()
     mpLocalMapper->InsertKeyFrame(pKF);
 
     mpLocalMapper->SetNotStop(false);
+    
+        // insert Key Frame into point cloud viewer
+    mpPointCloudMapping->insertKeyFrame( pKF, this->mImRGB, this->imDepth );
 
     mnLastKeyFrameId = mCurrentFrame.mnId;
     mpLastKeyFrame = pKF;

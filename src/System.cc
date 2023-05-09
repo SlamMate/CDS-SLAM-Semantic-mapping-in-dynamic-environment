@@ -32,6 +32,12 @@
 #include <boost/archive/binary_oarchive.hpp>
 #include <boost/archive/xml_iarchive.hpp>
 #include <boost/archive/xml_oarchive.hpp>
+#include <time.h>
+
+bool has_suffix(const std::string &str, const std::string &suffix) {
+  std::size_t index = str.find(suffix, str.size() - suffix.size());
+  return (index != std::string::npos);
+}
 
 namespace ORB_SLAM3
 {
@@ -74,6 +80,9 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
        exit(-1);
     }
 
+        // for point cloud resolution
+    float resolution = fsSettings["PointCloudMapping.Resolution"];
+    
     cv::FileNode node = fsSettings["File.version"];
     if(!node.empty() && node.isString() && node.string() == "1.0"){
         settings_ = new Settings(strSettingsFile,mSensor);
@@ -184,12 +193,15 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
     //Create Drawers. These are used by the Viewer
     mpFrameDrawer = new FrameDrawer(mpAtlas);
     mpMapDrawer = new MapDrawer(mpAtlas, strSettingsFile, settings_);
+    
+        // Initialize pointcloud mapping
+    mpPointCloudMapping = make_shared<PointCloudMapping>( resolution );
 
     //Initialize the Tracking thread
     //(it will live in the main thread of execution, the one that called this constructor)
     cout << "Seq. Name: " << strSequence << endl;
     mpTracker = new Tracking(this, mpVocabulary, mpFrameDrawer, mpMapDrawer,
-                             mpAtlas, mpKeyFrameDatabase, strSettingsFile, mSensor, settings_, strSequence);
+                             mpAtlas,  mpPointCloudMapping, mpKeyFrameDatabase, strSettingsFile, mSensor, settings_, strSequence);
 
     //Initialize the Local Mapping thread and launch
     mpLocalMapper = new LocalMapping(this, mpAtlas, mSensor==MONOCULAR || mSensor==IMU_MONOCULAR,
@@ -217,7 +229,7 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
 	mpDetector = new Detector();
     mptDetector = new thread(&ORB_SLAM3::Detector::Run,mpDetector);
 	mpDetector->SetTracker(mpTracker);
-
+    
     //Set pointers between threads
     mpTracker->SetLocalMapper(mpLocalMapper);
     mpTracker->SetLoopClosing(mpLoopCloser);
@@ -314,7 +326,13 @@ Sophus::SE3f System::TrackStereo(const cv::Mat &imLeft, const cv::Mat &imRight, 
         }
     }
     
+    //这句话后Detector开始工作
     mpTracker->GetImgForDetector(imLeft);
+    
+    // 获取图像
+//    mpPointCloudMapping->GetImgForMapping(imleft)
+    // 传入目标检测框
+//    mpPointCloudMapping->SetObjects(mpDetector->Objects)
 
     if (mSensor == System::IMU_STEREO)
         for(size_t i_imu = 0; i_imu < vImuMeas.size(); i_imu++)
@@ -392,6 +410,12 @@ Sophus::SE3f System::TrackRGBD(const cv::Mat &im, const cv::Mat &depthmap, const
     }
     
     	mpTracker->GetImgForDetector(im);
+    	
+    	    // 获取图像
+       mpTracker->GetImgForPointCloudMapping(im);
+           // 传入目标检测框
+       // mpPointCloudMapping->SetObjects(mpDetector->Objects)
+       
 
     if (mSensor == System::IMU_RGBD)
         for(size_t i_imu = 0; i_imu < vImuMeas.size(); i_imu++)
@@ -536,6 +560,7 @@ void System::Shutdown()
     mpLocalMapper->RequestFinish();
     mpLoopCloser->RequestFinish();
     	mpDetector->RequestFinish();
+    	mpPointCloudMapping->shutdown();
     /*if(mpViewer)
     {
         mpViewer->RequestFinish();

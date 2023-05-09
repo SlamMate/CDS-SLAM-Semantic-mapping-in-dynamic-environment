@@ -98,6 +98,7 @@ cv::Mat FrameDrawer::DrawFrame(float imageScale)
             vCurrentKeys = mvCurrentKeys;
         }
     }
+    
 
     if(imageScale != 1.f)
     {
@@ -195,6 +196,7 @@ cv::Mat FrameDrawer::DrawFrame(float imageScale)
         }
     }
 
+    cv::imwrite("rm_res.jpg", im);
     cv::Mat imWithInfo;
     DrawTextInfo(im,state, imWithInfo);
 
