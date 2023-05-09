@@ -12,7 +12,7 @@ Other countries:https://www.youtube.com/watch?v=OxYHrIgqyJQ
 
 ## 2. Acknowledgements
 
-Our work is based on ORBSLAM3,Crowd-SLAM,Semantic-SLAM
+My work is based on ORBSLAM3,Crowd-SLAM,Semantic-SLAM
   
     @article{ORBSLAM3_TRO,
       title={{ORB-SLAM3}: An Accurate Open-Source Library for Visual, Visual-Inertial 
@@ -45,6 +45,16 @@ Our work is based on ORBSLAM3,Crowd-SLAM,Semantic-SLAM
      doi = {10.1088/1757-899X/428/1/012023}
      }
      
+  if you use this to research you must cite this paper. The paper is based on this code
+  
+  @article{10.1088/1361-6501/acd1a4,
+	author={Zhang, Qi and Li, Changdi},
+	title={Semantic SLAM for mobile Robots in dynamic environments Based on visual camera sensors},
+	journal={Measurement Science and Technology},
+	url={http://iopscience.iop.org/article/10.1088/1361-6501/acd1a4},
+	year={2023},
+	abstract={Visual SLAM is constrained by a strong static world assumption,&#xD;making it hardly succeed when dynamic objects appear. Although some methods&#xD;eliminate dynamic objects by combining semantic and geometric information, the&#xD;fewer classes detected by the semantic method can not benefit these systems by&#xD;applying more scenes and constructing a richer semantic map. Our paper raises a&#xD;semantic visual SLAM system for a motion scene, which can run in real-time. We&#xD;use object detection to detect 80 classes in the scene and the moving consistency&#xD;checking to find outliers in every image. We propose different methods to check&#xD;the motion state of humans and other objects separately. For the detected human,&#xD;we propose an algorithm that judges if a person is sitting and divides the bounding&#xD;box belonging to the sitting person into two parts according to the proportion of&#xD;the human body. Then we use the same threshold as checking the boxes of the&#xD;standing person to determine the state of the two boxes belonging to the sitting&#xD;person, respectively. For other different objects except for humans, we propose an&#xD;algorithm that automatically adjusts the threshold of different bounding boxes.&#xD;This way, it can have the same detection performance for different objects. Finally,&#xD;we retain the static box points contained in the dynamic box and eliminate other&#xD;points in the dynamic box to benefit system performance from more detected&#xD;classes. We evaluated our SLAM on the TUM RGB-D dataset. The performance&#xD;of our SLAM exceeds most SLAM systems in a dynamic environment. Our system&#xD;is also tested in a real environment with a monocular camera to show its robustness&#xD;and universality.}
+}
   ## 3.Prerequisites
   Please refer to the compilation and operation of ORB-SLAM3:https://github.com/UZ-SLAMLab/ORB_SLAM3
 
