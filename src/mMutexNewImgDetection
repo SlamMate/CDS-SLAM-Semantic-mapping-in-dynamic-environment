@@ -1,0 +1,11 @@
+	mCurrentFrame.SetBoxes(mpDetector->people_boxes);
+	//cout << "FACTOR: " << mpDetector->fig_factor << endl;
+	nFeatures = FeatureNumberUpdate(mpDetector->aprox_area, mpDetector->fig_factor);
+	mCurrentFrame.SetBoxes(mpDetector->people_boxes);
+	nFeatures = FeatureNumberUpdate(mpDetector->aprox_area, mpDetector->fig_factor);
+    unique_lock<mutex> lock(mpDetector->mMutexGetNewImg);
+    mpDetector->mbNewImgFlag=true;
+    img.copyTo(mpDetector->mImg);
+    std::unique_lock <std::mutex> lock(mpDetector->mMutexNewImgDetection);
+	mCurrentFrame.SetBoxes(mpDetector->people_boxes);
+	nFeatures = FeatureNumberUpdate(mpDetector->aprox_area, mpDetector->fig_factor);
