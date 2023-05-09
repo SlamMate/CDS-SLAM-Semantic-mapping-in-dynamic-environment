@@ -11,7 +11,15 @@ China:https://www.bilibili.com/video/BV1St4y157qH?share_source=copy_web&vd_sourc
 Other countries:https://www.youtube.com/watch?v=OxYHrIgqyJQ
 
 ## 2. Acknowledgements
-
+if you use this to research you must cite this paper. The paper is based on this code
+  
+	@article{10.1088/1361-6501/acd1a4,
+		author={Zhang, Qi and Li, Changdi},
+		title={Semantic SLAM for mobile Robots in dynamic environments Based on visual camera sensors},
+		journal={Measurement Science and Technology},
+		url={http://iopscience.iop.org/article/10.1088/1361-6501/acd1a4},
+		year={2023}
+		}
 My work is based on ORBSLAM3,Crowd-SLAM,Semantic-SLAM
   
     @article{ORBSLAM3_TRO,
@@ -45,15 +53,7 @@ My work is based on ORBSLAM3,Crowd-SLAM,Semantic-SLAM
      doi = {10.1088/1757-899X/428/1/012023}
      }
      
-  if you use this to research you must cite this paper. The paper is based on this code
-  
-  @article{10.1088/1361-6501/acd1a4,
-	author={Zhang, Qi and Li, Changdi},
-	title={Semantic SLAM for mobile Robots in dynamic environments Based on visual camera sensors},
-	journal={Measurement Science and Technology},
-	url={http://iopscience.iop.org/article/10.1088/1361-6501/acd1a4},
-	year={2023}
-}
+     
   ## 3.Prerequisites
   Please refer to the compilation and operation of ORB-SLAM3:https://github.com/UZ-SLAMLab/ORB_SLAM3
 
