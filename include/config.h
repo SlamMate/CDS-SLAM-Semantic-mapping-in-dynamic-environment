@@ -1,67 +1,79 @@
-/**
-* This file is part of ORB-SLAM3
-*
-* Copyright (C) 2017-2021 Carlos Campos, Richard Elvira, Juan J. Gómez Rodríguez, José M.M. Montiel and Juan D. Tardós, University of Zaragoza.
-* Copyright (C) 2014-2016 Raúl Mur-Artal, José M.M. Montiel and Juan D. Tardós, University of Zaragoza.
-*
-* ORB-SLAM3 is free software: you can redistribute it and/or modify it under the terms of the GNU General Public
-* License as published by the Free Software Foundation, either version 3 of the License, or
-* (at your option) any later version.
-*
-* ORB-SLAM3 is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even
-* the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-* GNU General Public License for more details.
-*
-* You should have received a copy of the GNU General Public License along with ORB-SLAM3.
-* If not, see <http://www.gnu.org/licenses/>.
-*/
+//
+// Created by root on 18-4-3.
+//
 
-#ifndef CONFIG_H
-#define CONFIG_H
+#ifndef ORB_SLAM2_CONFIG_H
+#define ORB_SLAM2_CONFIG_H
 
-#include <unistd.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string>
+#endif //ORB_SLAM2_CONFIG_H
 
+namespace APC {
 
-namespace ORB_SLAM3
-{
-
-class ViewerConfig
-{
-
-};
-
-class CameraConfig
-{
-
-};
-
-class ORBExtractorConfig
-{
-
-};
-
-class IMUConfig
-{
-
-};
-
-class ConfigParser
-{
+class Config{
 public:
-    bool ParseConfigFile(std::string &strConfigFile);
 
-private:
+    Config():voxel_resolution(0.01f),
+        seed_resolution(0.1f),
+        color_importance (1.0f),
+        spatial_importance (0.4f),
+        normal_importance  (1.0f),
+        use_single_cam_transform (false),
+        use_supervoxel_refinement (false),
 
-    ViewerConfig mViewerConfig;
-    CameraConfig mCameraConfig;
-    ORBExtractorConfig mORBConfig;
-    IMUConfig mIMUConfig;
+        // Default parameters for model fitting
+        use_random_sampling (false),
+        noise_threshold(0.02f),
+        smooth_cost (0.001),
+        min_inliers_per_plane (100),
+	min_plane_area(0.025),
+        max_num_iterations (25),
+        max_curvature (0.01f),
+        gc_scale (1e3){}
+
+    public:
+
+    float voxel_resolution;
+    float seed_resolution;
+    float color_importance;
+    float spatial_importance;
+    float normal_importance;
+    bool use_single_cam_transform;
+    bool use_supervoxel_refinement;
+
+    // Default parameters for model fitting
+    bool use_random_sampling;
+    float noise_threshold;
+    float smooth_cost;
+    int min_inliers_per_plane;
+    float min_plane_area;
+    float label_cost;
+    int max_num_iterations;
+    float max_curvature;
+    int gc_scale;
+
+
+    Config& operator=(const Config& config){
+
+        voxel_resolution=config.voxel_resolution;
+        seed_resolution=config.seed_resolution;
+        color_importance=config.color_importance;
+        spatial_importance=config.spatial_importance;
+        normal_importance=config.normal_importance;
+        use_single_cam_transform=config.use_single_cam_transform;
+        use_supervoxel_refinement=config.use_supervoxel_refinement;
+
+        use_random_sampling=config.use_random_sampling;
+        noise_threshold=config.noise_threshold;
+        smooth_cost=config.smooth_cost;
+        min_inliers_per_plane=config.min_inliers_per_plane;
+        min_plane_area=config.min_plane_area;
+        label_cost=config.label_cost;
+        max_num_iterations=config.max_num_iterations;
+        max_curvature=config.max_curvature;
+        gc_scale=config.gc_scale;
+
+    }
 
 };
 
 }
-
-#endif // CONFIG_H
