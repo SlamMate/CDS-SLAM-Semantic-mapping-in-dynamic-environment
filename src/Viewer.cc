@@ -576,8 +576,8 @@ void Viewer::Release()
     unique_lock<mutex> lock(mMutexStop);
     mbStopped = false;
 }
-
-/*void Viewer::SetTrackingPause()
+/*
+void Viewer::SetTrackingPause()
 {
     mbStopTrack = true;
 }*/
